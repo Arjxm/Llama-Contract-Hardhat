@@ -172,12 +172,12 @@ async function main() {
 
   console.log(deployContract);
 
-  await verifyContract(coreLogic.target);
-  await verifyContract(relativeQuorumLogic.target);
-  await verifyContract(absolutePeerReviewLogic.target);
-  await verifyContract(absoluteQuorumLogic.target);
-  await verifyContract(accountLogic.target);
-  await verifyContract(policyLogic.target);
+  await verifyContract(coreLogic);
+  await verifyContract(relativeQuorumLogic);
+  await verifyContract(absolutePeerReviewLogic);
+  await verifyContract(absoluteQuorumLogic);
+  await verifyContract(accountLogic);
+  await verifyContract(policyLogic);
   await verifyContract(policyMetadata.target);
   await verifyContract(factory?.target, [coreLogic.target, relativeQuorumLogic.target, accountLogic.target, policyLogic.target, policyMetadata.target, jsonrootLlama.rootLlamaName, await readRelativeStrategies(filePath), await readAccounts(filePath), await readRoleDescriptions(filePath), await readRoleHolders(filePath), await readRolePermissions(filePath)]);
 }
@@ -187,7 +187,7 @@ async function main() {
 async function verifyContract(contract: any, ...constructorArguments: any) {
   console.log(`Verifying ${contract.contractName}`);
   await run("verify:verify", {
-    address: contract.address,
+    address:contract.target,
     constructorArguments: constructorArguments,
   });
 }
