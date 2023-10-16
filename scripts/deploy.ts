@@ -1,7 +1,9 @@
 import { ethers, run }from "hardhat";
 import fs from 'fs'
 import path from 'path';
+import { hexlify } from "ethers";
 
+const coder = ethers.AbiCoder.defaultAbiCoder();
 
 const filePath = path.join(__dirname, 'inputs.json');
 const jsonrootLlama = JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -24,27 +26,28 @@ async function readRelativeStrategies(jsonPath: any) {
     forceApprovalRoles: rawStrategy.forceApprovalRoles,
     forceDisapprovalRoles: rawStrategy.forceDisapprovalRoles
   }));
+  const encoded = strategyConfigs.map((config: any) => coder.encode([
+    'uint64', 'uint8', 'uint8', 'uint64', 'uint8[]', 'uint8[]', 'bool', 'uint16', 'uint16', 'uint64'
+], [
+    config.approvalPeriod, config.approvalRole, config.disapprovalRole,
+    config.expirationPeriod, config.forceApprovalRoles, config.forceDisapprovalRoles,
+    config.isFixedLengthApprovalPeriod, config.minApprovalPct, config.minDisapprovalPct,
+    config.queuingPeriod
+]));
 
-  //   const encoded = strategyConfigs.map((config: any) => ethers.AbiCoder.([
-  //     'uint256', 'uint256', 'uint256', 'uint256', 'uint256', 'bool', 'bytes32', 'bytes32', 'address[]', 'address[]'
-  // ], [
-  //     config.approvalPeriod, config.queuingPeriod, config.expirationPeriod, 
-  //     config.minApprovalPct, config.minDisapprovalPct, config.isFixedLengthApprovalPeriod, 
-  //     config.approvalRole, config.disapprovalRole, config.forceApprovalRoles, config.forceDisapprovalRoles
-  // ]));
-
-  return strategyConfigs;
+  return encoded;
 }
-
 
 async function readAccounts(jsonPath: string) {
   const jsonInput = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
 
   const rawAccountsConfigs = jsonInput.initialAccounts;
 
-  const accountConfigs = rawAccountsConfigs.map((rawAccount: any) => ({
-    name: rawAccount.name
-  }));
+  const accountConfigs = rawAccountsConfigs.map((rawAccount: any) => coder.encode([
+    'string'
+  ],[
+  rawAccount.name
+  ]));
 
   return accountConfigs;
 }
@@ -58,40 +61,46 @@ type RoleHolderData = {
 };
 
 async function readRoleHolders(jsonPath: string): Promise<RoleHolderData[]> {
-  // Read and parse the JSON file
-  const jsonInput = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
-  const rawRoleHolders: any[] = jsonInput.initialRoleHolders;
+   // Read and parse the JSON file
+   const jsonInput = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+   const rawRoleHolders: any[] = jsonInput.initialRoleHolders;
 
-  const roleHolders = rawRoleHolders.map((rawRoleHolder: any) => ({
-    role: rawRoleHolder.role,
-    policyholder: rawRoleHolder.policyholder,
-    quantity: rawRoleHolder.quantity,
-    expiration: rawRoleHolder.expiration,
-  }));
+   const encodedRoleHolders: any = rawRoleHolders.map((rawRoleHolder: any) => {
+       // ABI encode the data
+       return coder.encode(
+           ["string", "uint64", "address", "uint128", "uint8"], 
+           [
+              rawRoleHolder.comment,
+               rawRoleHolder.expiration,
+               rawRoleHolder.policyholder,
+               rawRoleHolder.quantity,
+               rawRoleHolder.role
+           ]
+       );
+   });
 
-  return roleHolders;
+   return encodedRoleHolders;
 }
 
 
 
-async function readRoleDescriptions(jsonPath: string) {
+async function readRoleDescriptions(jsonPath: string): Promise<string[]> {
   // Read and parse the JSON file
   const jsonInput = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
-
-  // Assuming that the structure of your JSON is such that you can directly index into it:
   const descriptions: string[] = jsonInput.initialRoleDescriptions;
 
-  // Check the length of each description
-  descriptions.forEach(description => {
-    if (Buffer.from(description).length > 32) {
-      throw new Error("Role description is too long");
-    }
+  // Check the length of each description and convert to bytes32
+  const bytes32Descriptions: string[] = descriptions.map(description => {
+      if (Buffer.from(description).length > 32) {
+          throw new Error("Role description is too long");
+      }
+      
+      // Convert string to bytes32 and then to hex string
+      return hexlify(ethers.encodeBytes32String(description));
   });
 
-  // Return the descriptions array
-  return descriptions;
+  return bytes32Descriptions;
 }
-
 
 type RolePermissionData = {
   role: string;
@@ -99,21 +108,24 @@ type RolePermissionData = {
   hasPermission: boolean;
 };
 
-async function readRolePermissions(jsonPath: string): Promise<RolePermissionData[]> {
+async function readRolePermissions(jsonPath: string): Promise<{role: number, permissionId: string, hasPermission: boolean}[]> {
   // Read and parse the JSON file
   const jsonInput = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
 
   // Assuming that the structure of your JSON is such that you can directly index into it:
   const rawRolePermissions: any[] = jsonInput.initialRolePermissions;
 
-  const rolePermissions = rawRolePermissions.map((rawRolePermission: any) => ({
-    role: rawRolePermission.role,
-    permissionId: rawRolePermission.permissionId,
-    hasPermission: true // Given your function always set this as true
-  }));
+  const rolePermissions: any = rawRolePermissions.map((rawRolePermission: any) => {
+      return {
+          role: rawRolePermission.role,
+          permissionId: hexlify(rawRolePermission.permissionId),
+          hasPermission: true // Given your function always sets this as true
+      };
+  });
 
   return rolePermissions;
 }
+
 async function main() {
   const coreLogic = await ethers.deployContract("LlamaCore");
   await coreLogic.waitForDeployment();
@@ -186,8 +198,3 @@ main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
-//  const lock = await ethers.deployContract("Lock", [unlockTime], {
-//     value: lockedAmount,
-//   });
-
-//   await lock.waitForDeployment();
